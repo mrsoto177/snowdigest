@@ -142,9 +142,12 @@
       <label for="model">Modelo</label>
       <select id="model">
         <option value="claude-haiku-4-5-20251001">Haiku 4.5 — Más rápido, menor costo ($1/$5 por MTok)</option>
-        <option value="claude-sonnet-4-6-20250514">Sonnet 4.6 — Más detallado ($3/$15 por MTok)</option>
+        <option value="claude-sonnet-5">Sonnet 5 — Más detallado ($2/$10 por MTok)</option>
       </select>
       <p class="hint">Haiku es más que suficiente para resúmenes. Sonnet genera análisis más profundos.</p>
+
+      <button class="btn-test" id="btnTest" style="width:100%;padding:10px;background:#2a2a4a;color:#7eb8ff;border:1px solid #3a3a5a;border-radius:8px;font-size:13px;cursor:pointer;margin-top:8px;">Probar conexión API</button>
+      <div id="testResult" style="display:none;margin-top:8px;padding:10px 12px;border-radius:8px;font-size:12px;line-height:1.5;"></div>
     </div>
 
     <div class="section">
@@ -163,34 +166,6 @@
     <div class="toast" id="toast">✓ Configuración guardada</div>
   </div>
 
-  <script>
-    // Load saved config
-    chrome.storage.local.get(["apiKey", "model", "preferredMode"], (data) => {
-      if (data.apiKey) document.getElementById("apiKey").value = data.apiKey;
-      if (data.model) document.getElementById("model").value = data.model;
-      if (data.preferredMode) document.getElementById("defaultMode").value = data.preferredMode;
-    });
-
-    // Save
-    document.getElementById("btnSave").addEventListener("click", () => {
-      const apiKey = document.getElementById("apiKey").value.trim();
-      const model = document.getElementById("model").value;
-      const preferredMode = document.getElementById("defaultMode").value;
-      const btn = document.getElementById("btnSave");
-
-      chrome.storage.local.set({ apiKey, model, preferredMode }, () => {
-        // Change button to confirm
-        btn.textContent = "✓ Configuración guardada";
-        btn.style.background = "#22c55e";
-        const toast = document.getElementById("toast");
-        toast.style.display = "block";
-        setTimeout(() => {
-          btn.textContent = "Guardar configuración";
-          btn.style.background = "#3b82f6";
-          toast.style.display = "none";
-        }, 3000);
-      });
-    });
-  </script>
+  <script src="options.js"></script>
 </body>
 </html>

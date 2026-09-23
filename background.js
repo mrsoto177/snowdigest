@@ -1,5 +1,13 @@
 // SnowDigest — Background Service Worker
 
+// Techo de salida por modo: flashcards y notas Obsidian son las mas largas.
+const MAX_TOKENS = {
+  resumen: 2048,
+  puntos: 2048,
+  flashcards: 4096,
+  obsidian: 4096
+};
+
 const PROMPTS = {
   resumen: {
     label: "Resumen",
@@ -45,15 +53,23 @@ chrome.contextMenus.onClicked.addListener((info, tab) => {
 
 // Message handler
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+  console.log("[SnowDigest] Message received:", request.action);
+
   if (request.action === "summarize") {
-    handleSummarize(request).then(sendResponse).catch(err => {
-      sendResponse({ error: err.message });
+    console.log("[SnowDigest] Starting summarize, text length:", request.text?.length, "mode:", request.mode);
+    handleSummarize(request).then(result => {
+      console.log("[SnowDigest] Summarize result:", result.success ? "OK" : result.error);
+      sendResponse(result);
+    }).catch(err => {
+      console.error("[SnowDigest] Summarize exception:", err);
+      sendResponse({ error: "EXCEPTION", message: err.message });
     });
-    return true; // async
+    return true;
   }
 
   if (request.action === "getConfig") {
     chrome.storage.local.get(["apiKey", "model", "preferredMode"], (data) => {
+      console.log("[SnowDigest] Config loaded - hasKey:", !!data.apiKey, "keyPrefix:", data.apiKey?.substring(0, 10), "model:", data.model);
       sendResponse({
         apiKey: data.apiKey || "",
         model: data.model || "claude-haiku-4-5-20251001",
@@ -74,12 +90,67 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     sendResponse({ prompts: Object.keys(PROMPTS).map(k => ({ id: k, label: PROMPTS[k].label })) });
     return true;
   }
+
+  if (request.action === "testApiKey") {
+    console.log("[SnowDigest] Testing API key...");
+    testApiKey(request.apiKey, request.model).then(result => {
+      console.log("[SnowDigest] Test result:", result);
+      sendResponse(result);
+    }).catch(err => {
+      console.error("[SnowDigest] Test exception:", err);
+      sendResponse({ success: false, error: err.message });
+    });
+    return true;
+  }
 });
+
+async function testApiKey(apiKey, model) {
+  console.log("[SnowDigest] testApiKey called, keyPrefix:", apiKey?.substring(0, 10), "model:", model);
+  
+  if (!apiKey) {
+    return { success: false, error: "No API key provided" };
+  }
+
+  try {
+    const response = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": apiKey,
+        "anthropic-version": "2023-06-01",
+        "anthropic-dangerous-direct-browser-access": "true"
+      },
+      body: JSON.stringify({
+        model: model || "claude-haiku-4-5-20251001",
+        max_tokens: 32,
+        messages: [
+          { role: "user", content: "Di solo: OK" }
+        ]
+      })
+    });
+
+    console.log("[SnowDigest] Test API response status:", response.status);
+    const data = await response.json();
+    console.log("[SnowDigest] Test API response body:", JSON.stringify(data).substring(0, 200));
+
+    if (!response.ok) {
+      return { success: false, error: `HTTP ${response.status}: ${data?.error?.message || "Unknown error"}`, status: response.status };
+    }
+
+    const text = data.content?.filter(c => c.type === "text")?.map(c => c.text)?.join("") || "";
+    return { success: true, response: text, usage: data.usage };
+  } catch (err) {
+    console.error("[SnowDigest] Test fetch error:", err);
+    return { success: false, error: "Network error: " + err.message };
+  }
+}
 
 async function handleSummarize({ text, mode }) {
   const data = await chrome.storage.local.get(["apiKey", "model"]);
   const apiKey = data.apiKey;
   const model = data.model || "claude-haiku-4-5-20251001";
+
+  console.log("[SnowDigest] handleSummarize - hasKey:", !!apiKey, "model:", model, "textLen:", text?.length);
 
   if (!apiKey) {
     return { error: "NO_API_KEY", message: "No hay API key configurada" };
@@ -88,16 +159,18 @@ async function handleSummarize({ text, mode }) {
   const promptConfig = PROMPTS[mode] || PROMPTS.resumen;
 
   try {
+    console.log("[SnowDigest] Calling API...");
     const response = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         "x-api-key": apiKey,
-        "anthropic-version": "2023-06-01"
+        "anthropic-version": "2023-06-01",
+        "anthropic-dangerous-direct-browser-access": "true"
       },
       body: JSON.stringify({
         model: model,
-        max_tokens: 2048,
+        max_tokens: MAX_TOKENS[mode] || 2048,
         system: promptConfig.system,
         messages: [
           { role: "user", content: promptConfig.user(text) }
@@ -105,8 +178,11 @@ async function handleSummarize({ text, mode }) {
       })
     });
 
+    console.log("[SnowDigest] API response status:", response.status);
+
     if (!response.ok) {
       const errBody = await response.json().catch(() => ({}));
+      console.error("[SnowDigest] API error body:", JSON.stringify(errBody));
       if (response.status === 401) {
         return { error: "INVALID_KEY", message: "API key inválida" };
       }
@@ -120,17 +196,23 @@ async function handleSummarize({ text, mode }) {
     }
 
     const result = await response.json();
+    console.log("[SnowDigest] API success, usage:", result.usage);
+    
     const outputText = result.content
       .filter(c => c.type === "text")
       .map(c => c.text)
       .join("\n");
 
-    // Calculate approximate cost
     const inputTokens = result.usage?.input_tokens || 0;
     const outputTokens = result.usage?.output_tokens || 0;
-    let costPerMTokIn = 1, costPerMTokOut = 5; // Haiku defaults
-    if (model.includes("sonnet")) { costPerMTokIn = 3; costPerMTokOut = 15; }
-    const cost = (inputTokens * costPerMTokIn + outputTokens * costPerMTokOut) / 1_000_000;
+    const PRICES = {
+      "claude-haiku-4-5-20251001":  { in: 1, out: 5 },
+      "claude-sonnet-5":            { in: 2, out: 10 },
+      "claude-sonnet-4-6-20250514": { in: 3, out: 15 },
+      "claude-opus-5":              { in: 5, out: 25 }
+    };
+    const price = PRICES[model] || PRICES["claude-haiku-4-5-20251001"];
+    const cost = (inputTokens * price.in + outputTokens * price.out) / 1_000_000;
 
     return {
       success: true,
@@ -138,6 +220,7 @@ async function handleSummarize({ text, mode }) {
       usage: { inputTokens, outputTokens, cost: cost.toFixed(6) }
     };
   } catch (err) {
+    console.error("[SnowDigest] Fetch error:", err);
     return { error: "NETWORK", message: "Error de conexión: " + err.message };
   }
 }

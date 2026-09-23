@@ -22,6 +22,13 @@ document.addEventListener("DOMContentLoaded", async () => {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   const isOnSite = tab?.url?.includes("nowlearning.servicenow.com") || tab?.url?.includes("learning.servicenow.com");
 
+  // Options link — se registra antes del early return para que
+  // "Configuracion" tambien funcione fuera de nowlearning.
+  document.getElementById("linkOptions").addEventListener("click", (e) => {
+    e.preventDefault();
+    chrome.runtime.openOptionsPage();
+  });
+
   if (!isOnSite) {
     document.getElementById("mainContent").style.display = "none";
     document.getElementById("notOnSite").style.display = "block";
@@ -37,16 +44,68 @@ document.addEventListener("DOMContentLoaded", async () => {
   updateModeUI();
   updateStatusUI();
 
-  // Extract content from page
+  // Extract content from page — lesson content is inside a cross-origin Rustici iframe
   try {
-    const result = await chrome.tabs.sendMessage(tab.id, { action: "extractContent" });
-    if (result) {
-      extractedContent = result.content || "";
-      extractedMeta = result.meta || {};
+    const results = await chrome.scripting.executeScript({
+      target: { tabId: tab.id, allFrames: true },
+      func: () => {
+        const frViews = document.querySelectorAll(".fr-view");
+        const blockTexts = document.querySelectorAll(".block-text .block-text__container");
+        const lessonSection = document.querySelector("section.blocks-lesson");
+        
+        let content = "";
+        
+        if (frViews.length > 0) {
+          const parts = [];
+          frViews.forEach(fv => {
+            const t = fv.textContent.trim();
+            if (t.length > 5) parts.push(t);
+          });
+          content = parts.join("\n\n");
+        }
+        
+        if (!content && blockTexts.length > 0) {
+          const parts = [];
+          blockTexts.forEach(bt => {
+            const t = bt.textContent.trim();
+            if (t.length > 5) parts.push(t);
+          });
+          content = parts.join("\n\n");
+        }
+        
+        if (!content && lessonSection) {
+          const clone = lessonSection.cloneNode(true);
+          clone.querySelectorAll("script, style, nav, button, input, svg, img, video, [hidden]").forEach(el => el.remove());
+          content = clone.textContent.replace(/[ \t]+/g, " ").replace(/\n{3,}/g, "\n\n").trim();
+        }
+        
+        const h1 = document.querySelector("h1");
+        const title = h1 ? h1.textContent.trim() : "";
+        const lessonMatch = document.body.textContent.match(/lesson\s+(\d+)\s+of\s+(\d+)/i);
+        const lessonNumber = lessonMatch ? `${lessonMatch[1]} de ${lessonMatch[2]}` : "";
+        
+        if (!content || content.length < 20) return null;
+        
+        return { 
+          meta: { lesson: title, lessonNumber, course: "", url: location.href }, 
+          content
+        };
+      }
+    });
+    
+    const validResult = results?.find(r => r.result && r.result.content);
+    if (validResult) {
+      extractedContent = validResult.result.content;
+      extractedMeta = validResult.result.meta;
+      extractedMeta.url = tab.url;
       updateMetaUI();
+    } else {
+      document.getElementById("lessonTitle").textContent = "No se encontró contenido en esta página";
+      document.getElementById("btnProcess").disabled = true;
     }
   } catch (e) {
-    document.getElementById("lessonTitle").textContent = "No se pudo extraer contenido";
+    console.error("[SnowDigest] Extraction error:", e);
+    document.getElementById("lessonTitle").textContent = "Error al extraer: " + e.message;
     document.getElementById("btnProcess").disabled = true;
   }
 
@@ -73,14 +132,24 @@ document.addEventListener("DOMContentLoaded", async () => {
   document.getElementById("btnSelection").addEventListener("click", async () => {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
     try {
-      const result = await chrome.tabs.sendMessage(tab.id, { action: "extractSelection" });
-      if (result?.content) {
-        processText(result.content);
+      // Check all frames for selected text (content is in Rustici iframe)
+      const results = await chrome.scripting.executeScript({
+        target: { tabId: tab.id, allFrames: true },
+        func: () => {
+          const sel = window.getSelection()?.toString()?.trim();
+          // Also check cached selection if available
+          const cached = window.__snowdigest_cached_selection || "";
+          return sel || cached || "";
+        }
+      });
+      const selText = results?.map(r => r.result).filter(t => t && t.length > 10)?.[0];
+      if (selText) {
+        processText(selText);
       } else {
         showError("Selecciona texto en la página primero.");
       }
     } catch (e) {
-      showError("No se pudo obtener la selección.");
+      showError("No se pudo acceder a la página. Recarga e intenta de nuevo.");
     }
   });
 
@@ -127,11 +196,6 @@ document.addEventListener("DOMContentLoaded", async () => {
     document.getElementById("actionGroup").style.display = "flex";
   });
 
-  // Options link
-  document.getElementById("linkOptions").addEventListener("click", (e) => {
-    e.preventDefault();
-    chrome.runtime.openOptionsPage();
-  });
 });
 
 function updateModeUI() {
