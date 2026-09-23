@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>SnowDigest — Configuración</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: #0f0f23;
+      color: #e0e0e0;
+      min-height: 100vh;
+      display: flex;
+      justify-content: center;
+      padding: 40px 20px;
+    }
+    .container { width: 100%; max-width: 520px; }
+    h1 {
+      font-size: 22px;
+      font-weight: 600;
+      margin-bottom: 8px;
+      color: #fff;
+    }
+    .subtitle {
+      font-size: 13px;
+      color: #888;
+      margin-bottom: 32px;
+    }
+    .section {
+      background: #1a1a2e;
+      border: 1px solid #2a2a4a;
+      border-radius: 12px;
+      padding: 20px;
+      margin-bottom: 16px;
+    }
+    .section-title {
+      font-size: 14px;
+      font-weight: 600;
+      margin-bottom: 16px;
+      color: #7eb8ff;
+    }
+    label {
+      display: block;
+      font-size: 13px;
+      color: #aaa;
+      margin-bottom: 6px;
+    }
+    input[type="password"],
+    input[type="text"],
+    select {
+      width: 100%;
+      padding: 10px 12px;
+      background: #111128;
+      border: 1px solid #3a3a5a;
+      border-radius: 8px;
+      color: #e0e0e0;
+      font-size: 14px;
+      font-family: monospace;
+      margin-bottom: 16px;
+    }
+    input:focus, select:focus {
+      outline: none;
+      border-color: #7eb8ff;
+    }
+    select {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    }
+    .hint {
+      font-size: 11px;
+      color: #666;
+      margin-top: -12px;
+      margin-bottom: 16px;
+    }
+    .btn-save {
+      width: 100%;
+      padding: 12px;
+      background: #3b82f6;
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+    .btn-save:hover { background: #2563eb; }
+    .toast {
+      display: none;
+      padding: 10px 16px;
+      background: rgba(74,222,128,0.15);
+      border: 1px solid rgba(74,222,128,0.3);
+      border-radius: 8px;
+      color: #4ade80;
+      font-size: 13px;
+      text-align: center;
+      margin-top: 12px;
+    }
+    .info-box {
+      background: rgba(126,184,255,0.08);
+      border: 1px solid rgba(126,184,255,0.2);
+      border-radius: 8px;
+      padding: 12px 14px;
+      font-size: 12px;
+      color: #7eb8ff;
+      line-height: 1.5;
+      margin-bottom: 16px;
+    }
+    .toggle-key {
+      position: absolute;
+      right: 12px;
+      top: 50%;
+      transform: translateY(-50%);
+      background: none;
+      border: none;
+      color: #7eb8ff;
+      cursor: pointer;
+      font-size: 14px;
+    }
+    .field-wrapper {
+      position: relative;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>❄️ SnowDigest</h1>
+    <p class="subtitle">Configuración de la extensión</p>
+
+    <div class="section">
+      <div class="section-title">API de Anthropic</div>
+
+      <div class="info-box">
+        Sin API key la extensión funciona en modo extractor: copia el contenido con un prompt listo para pegar en claude.ai.
+      </div>
+
+      <label for="apiKey">API key</label>
+      <div class="field-wrapper">
+        <input type="password" id="apiKey" placeholder="sk-ant-..." autocomplete="off">
+      </div>
+      <p class="hint">Se guarda localmente en tu navegador. Nunca se envía a otro lugar que no sea api.anthropic.com.</p>
+
+      <label for="model">Modelo</label>
+      <select id="model">
+        <option value="claude-haiku-4-5-20251001">Haiku 4.5 — Más rápido, menor costo ($1/$5 por MTok)</option>
+        <option value="claude-sonnet-4-6-20250514">Sonnet 4.6 — Más detallado ($3/$15 por MTok)</option>
+      </select>
+      <p class="hint">Haiku es más que suficiente para resúmenes. Sonnet genera análisis más profundos.</p>
+    </div>
+
+    <div class="section">
+      <div class="section-title">Preferencias</div>
+
+      <label for="defaultMode">Modo por defecto</label>
+      <select id="defaultMode">
+        <option value="resumen">📄 Resumen</option>
+        <option value="puntos">📋 Puntos clave</option>
+        <option value="flashcards">🗂 Flashcards</option>
+        <option value="obsidian">🔮 Notas para Obsidian</option>
+      </select>
+    </div>
+
+    <button class="btn-save" id="btnSave">Guardar configuración</button>
+    <div class="toast" id="toast">✓ Configuración guardada</div>
+  </div>
+
+  <script>
+    // Load saved config
+    chrome.storage.local.get(["apiKey", "model", "preferredMode"], (data) => {
+      if (data.apiKey) document.getElementById("apiKey").value = data.apiKey;
+      if (data.model) document.getElementById("model").value = data.model;
+      if (data.preferredMode) document.getElementById("defaultMode").value = data.preferredMode;
+    });
+
+    // Save
+    document.getElementById("btnSave").addEventListener("click", () => {
+      const apiKey = document.getElementById("apiKey").value.trim();
+      const model = document.getElementById("model").value;
+      const preferredMode = document.getElementById("defaultMode").value;
+      const btn = document.getElementById("btnSave");
+
+      chrome.storage.local.set({ apiKey, model, preferredMode }, () => {
+        // Change button to confirm
+        btn.textContent = "✓ Configuración guardada";
+        btn.style.background = "#22c55e";
+        const toast = document.getElementById("toast");
+        toast.style.display = "block";
+        setTimeout(() => {
+          btn.textContent = "Guardar configuración";
+          btn.style.background = "#3b82f6";
+          toast.style.display = "none";
+        }, 3000);
+      });
+    });
+  </script>
+</body>
+</html>

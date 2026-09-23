@@ -1,0 +1,43 @@
+{
+  "manifest_version": 3,
+  "name": "SnowDigest",
+  "version": "1.0.0",
+  "description": "Resume y extrae contenido de cursos de ServiceNow University",
+  "permissions": [
+    "storage",
+    "contextMenus",
+    "activeTab"
+  ],
+  "host_permissions": [
+    "https://nowlearning.servicenow.com/*",
+    "https://learning.servicenow.com/*",
+    "https://api.anthropic.com/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "content_scripts": [
+    {
+      "matches": ["https://nowlearning.servicenow.com/*", "https://learning.servicenow.com/*"],
+      "js": ["content.js"],
+      "css": ["content-overlay.css"]
+    }
+  ],
+  "options_ui": {
+    "page": "options.html",
+    "open_in_tab": true
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  }
+}
